@@ -8,6 +8,7 @@ import Interview from "./pages/Interview";
 import Results from "./pages/Results";
 import History from "./pages/History";
 import Profile from "./pages/Profile";
+import Performance from "./pages/Performance";
 
 export default function App() {
   return (
@@ -19,7 +20,7 @@ export default function App() {
       <Route path="/interview" element={<ProtectedRoute><Interview /></ProtectedRoute>} />
       <Route path="/results/:sessionId" element={<ProtectedRoute><Results /></ProtectedRoute>} />
       <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
-      <Route path="/performance" element={<ProtectedRoute><History /></ProtectedRoute>} />
+     <Route path="/performance" element={<ProtectedRoute><Performance /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -63,7 +63,6 @@ export async function createSession(req, res) {
   }
 }
 
-/* POST /api/interview/questions/:questionId/answer */
 export async function submitAnswer(req, res) {
   const { questionId } = req.params;
   const { answer } = req.body;
@@ -71,7 +70,6 @@ export async function submitAnswer(req, res) {
   if (!answer?.trim()) throw new HttpError(400, "Answer is required");
   if (answer.length > 5000) throw new HttpError(400, "Answer is too long (max 5000 characters)");
 
-  // Join to sessions so users can only answer their own questions
   const [rows] = await pool.query(
     `SELECT q.id, q.question_text, s.role, s.status
      FROM questions q
@@ -131,7 +129,6 @@ export async function completeSession(req, res) {
   res.json({ overall_score: avgScore });
 }
 
-/* GET /api/interview/sessions */
 export async function listSessions(req, res) {
   const [rows] = await pool.query(
     `SELECT id, role, difficulty, status, overall_score, created_at
@@ -141,7 +138,6 @@ export async function listSessions(req, res) {
   res.json(rows);
 }
 
-/* GET /api/interview/sessions/:sessionId */
 export async function getSession(req, res) {
   const session = await getOwnedSession(req.params.sessionId, req.user.id);
 
@@ -155,7 +151,7 @@ export async function getSession(req, res) {
     [session.id]
   );
 
-  // mysql2 returns JSON columns already parsed; fall back to parsing strings
+ 
   const parse = (v) => (typeof v === "string" ? JSON.parse(v) : v || []);
   const items = rows.map((r) => ({
     ...r,
@@ -167,9 +163,112 @@ export async function getSession(req, res) {
   res.json({ session, items });
 }
 
-/* DELETE /api/interview/sessions/:sessionId */
+
 export async function deleteSession(req, res) {
   const session = await getOwnedSession(req.params.sessionId, req.user.id);
   await pool.query("DELETE FROM interview_sessions WHERE id = ?", [session.id]);
   res.status(204).end();
+}
+
+/* GET /api/interview/performance */
+export async function getPerformance(req, res) {
+  const [sessions] = await pool.query(
+    `SELECT id, role, difficulty, overall_score, created_at
+     FROM interview_sessions
+     WHERE user_id = ? AND status = 'completed'
+     ORDER BY created_at ASC`,
+    [req.user.id]
+  );
+
+  const [answers] = await pool.query(
+    `SELECT s.id AS session_id, q.question_text, a.score, a.keywords_matched
+     FROM answers a
+     JOIN questions q ON a.question_id = q.id
+     JOIN interview_sessions s ON q.session_id = s.id
+     WHERE s.user_id = ?`,
+    [req.user.id]
+  );
+
+  const pct = (n) => Math.round(Number(n) * 10);   // scores are stored 0-10
+  const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+
+  const scored = sessions.filter((s) => s.overall_score != null);
+  const scores = scored.map((s) => Number(s.overall_score));
+
+  // Recent change: last 3 sessions vs the (up to) 3 before them
+  let change = null;
+  if (scores.length >= 2) {
+    const recent = scores.slice(-3);
+    const earlier = scores.slice(Math.max(0, scores.length - 6), scores.length - recent.length);
+    if (earlier.length) change = pct(avg(recent)) - pct(avg(earlier));
+  }
+
+  // Group sessions by a key and average the scores
+  const groupBy = (keyFn) => {
+    const map = new Map();
+    for (const s of scored) {
+      const key = keyFn(s);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(Number(s.overall_score));
+    }
+    return [...map.entries()].map(([name, vals]) => ({
+      name, score: pct(avg(vals)), count: vals.length,
+    }));
+  };
+
+  const order = ["easy", "medium", "hard"];
+  const byDifficulty = groupBy((s) => s.difficulty)
+    .sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+  const byTopic = groupBy((s) => s.role).sort((a, b) => b.count - a.count).slice(0, 6);
+
+  // Answer quality buckets
+  const distribution = { needsWork: 0, fair: 0, good: 0, excellent: 0 };
+  for (const a of answers) {
+    const s = Number(a.score);
+    if (s >= 9) distribution.excellent++;
+    else if (s >= 7) distribution.good++;
+    else if (s >= 5) distribution.fair++;
+    else distribution.needsWork++;
+  }
+
+  // Most frequent keywords the candidate used correctly
+  const kwCount = new Map();
+  for (const a of answers) {
+    const list = typeof a.keywords_matched === "string"
+      ? JSON.parse(a.keywords_matched) : a.keywords_matched || [];
+    for (const kw of list) {
+      const k = String(kw).trim().toLowerCase();
+      if (k) kwCount.set(k, (kwCount.get(k) || 0) + 1);
+    }
+  }
+  const topKeywords = [...kwCount.entries()]
+    .sort((a, b) => b[1] - a[1]).slice(0, 12)
+    .map(([word, count]) => ({ word, count }));
+
+  const weakest = [...answers]
+    .sort((a, b) => Number(a.score) - Number(b.score)).slice(0, 5)
+    .map((a) => ({
+      session_id: a.session_id, question_text: a.question_text, score: pct(a.score),
+    }));
+
+  res.json({
+    summary: {
+      interviews: sessions.length,
+      questionsAnswered: answers.length,
+      averageScore: scores.length ? pct(avg(scores)) : null,
+      bestScore: scores.length ? pct(Math.max(...scores)) : null,
+      change,
+    },
+    trend: scored.map((s, i) => ({
+      name: `#${i + 1}`,
+      date: s.created_at,
+      role: s.role,
+      score: pct(s.overall_score),
+    })),
+    byDifficulty,
+    byTopic,
+    distribution,
+    topKeywords,
+    weakest,
+  });
 }

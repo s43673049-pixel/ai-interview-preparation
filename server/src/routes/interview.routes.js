@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   createSession, submitAnswer, completeSession,
-  listSessions, getSession, deleteSession,
+  listSessions, getSession, deleteSession, getPerformance,
 } from "../controllers/interview.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { aiLimiter } from "../middleware/rateLimit.js";
@@ -14,6 +14,7 @@ router.use(authenticate);
 router.get("/sessions", asyncHandler(listSessions));
 router.post("/sessions", aiLimiter, asyncHandler(createSession));
 router.get("/sessions/:sessionId", asyncHandler(getSession));
+router.get("/performance", asyncHandler(getPerformance));
 router.post("/sessions/:sessionId/complete", asyncHandler(completeSession));
 router.delete("/sessions/:sessionId", asyncHandler(deleteSession));
 
