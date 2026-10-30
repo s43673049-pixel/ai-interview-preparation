@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth.routes.js";
 import interviewRoutes from "./routes/interview.routes.js";
 import { errorHandler, notFound } from "./middleware/errorHandler.js";
 import { apiLimiter } from "./middleware/rateLimit.js";
+import profileRoutes from "./routes/profile.routes.js";
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.use("/api", apiLimiter);
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 app.use("/api/auth", authRoutes);
 app.use("/api/interview", interviewRoutes);
+app.use("/api/profile", profileRoutes);   
 
 app.use(notFound);
 app.use(errorHandler);
