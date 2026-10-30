@@ -1,37 +1,48 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Sparkles, CheckCircle2, Clock, Code2, Type } from "lucide-react";
 import api from "../api/client";
+import Layout from "../components/Layout";
 import ScoreBadge from "../components/ScoreBadge";
 import Spinner from "../components/Spinner";
+import CodeEditorAnswer from "../components/CodeEditorAnswer";
+import MicButton from "../components/MicButton";
 
-const DIFFICULTIES = ["easy", "medium", "hard"];
+const TYPES = ["Technical", "HR", "Behavioral", "Mixed"];
+const DIFFICULTIES = ["Easy", "Medium", "Hard"];
+const COUNTS = [5, 10, 15];
 
 export default function Interview() {
   const navigate = useNavigate();
 
-  // setup state
-  const [setup, setSetup] = useState({ role: "", difficulty: "medium", count: 5, topics: "" });
+  const [setup, setSetup] = useState({
+    type: "Technical",
+    topic: "",
+    difficulty: "Medium",
+    count: 10,
+  });
   const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
 
-  // interview state
-  const [session, setSession] = useState(null); // { id, questions: [{id, question_text}] }
+  const [session, setSession] = useState(null);
   const [current, setCurrent] = useState(0);
   const [answer, setAnswer] = useState("");
   const [feedback, setFeedback] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+
+  const [answerMode, setAnswerMode] = useState("text"); // "text" | "code"
+  const [codeLanguage, setCodeLanguage] = useState("javascript");
 
   const startInterview = async (e) => {
     e.preventDefault();
     setError("");
     setStarting(true);
     try {
-      const topics = setup.topics.split(",").map((t) => t.trim()).filter(Boolean);
       const { data } = await api.post("/interview/sessions", {
-        role: setup.role,
-        difficulty: setup.difficulty,
-        count: Number(setup.count),
-        topics,
+        role: setup.topic || setup.type,
+        difficulty: setup.difficulty.toLowerCase(),
+        count: setup.count,
+        topics: setup.topic ? [setup.topic] : [],
       });
       setSession({ id: data.sessionId, questions: data.questions });
     } catch (err) {
@@ -43,11 +54,13 @@ export default function Interview() {
 
   const submitAnswer = async () => {
     if (!answer.trim()) return;
-    setError("");
     setSubmitting(true);
+    setError("");
     try {
       const q = session.questions[current];
-      const { data } = await api.post(`/interview/questions/${q.id}/answer`, { answer });
+      const { data } = await api.post(`/interview/questions/${q.id}/answer`, {
+        answer,
+      });
       setFeedback(data);
     } catch (err) {
       setError(err.response?.data?.error || "Could not evaluate answer");
@@ -71,134 +84,279 @@ export default function Interview() {
   /* ---------- Setup screen ---------- */
   if (!session) {
     return (
-      <div className="mx-auto max-w-lg">
-        <form onSubmit={startInterview} className="card space-y-4">
-          <h1 className="text-2xl font-bold">Start a mock interview</h1>
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">Target role</label>
-            <input
-              className="input" required placeholder="e.g. Backend Developer"
-              value={setup.role}
-              onChange={(e) => setSetup({ ...setup, role: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">Focus topics (optional)</label>
-            <input
-              className="input" placeholder="e.g. Node.js, SQL, system design"
-              value={setup.topics}
-              onChange={(e) => setSetup({ ...setup, topics: e.target.value })}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+      <Layout>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <form
+            onSubmit={startInterview}
+            className="card space-y-6 lg:col-span-2"
+          >
             <div>
-              <label className="mb-1 block text-sm font-medium">Difficulty</label>
-              <select
-                className="input capitalize" value={setup.difficulty}
-                onChange={(e) => setSetup({ ...setup, difficulty: e.target.value })}
-              >
-                {DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
+              <h1 className="text-xl font-bold">Start a New Interview</h1>
+              <p className="text-sm text-slate-500">
+                Customize your interview settings and let AI do the magic.
+              </p>
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium">Questions</label>
-              <select
-                className="input" value={setup.count}
-                onChange={(e) => setSetup({ ...setup, count: e.target.value })}
-              >
-                {[3, 5, 8, 10].map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
-          </div>
 
-          <button type="submit" disabled={starting} className="btn-primary w-full">
-            {starting ? "Generating questions..." : "Start interview"}
-          </button>
-        </form>
-      </div>
+            {error && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </p>
+            )}
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Interview Type
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {TYPES.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setSetup({ ...setup, type: t })}
+                    className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                      setup.type === t
+                        ? "border-brand-600 bg-brand-50 text-brand-700"
+                        : "border-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Technology / Topic
+              </label>
+              <input
+                className="input"
+                placeholder="e.g. JavaScript, System Design"
+                value={setup.topic}
+                onChange={(e) => setSetup({ ...setup, topic: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Difficulty Level
+              </label>
+              <div className="flex gap-2">
+                {DIFFICULTIES.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setSetup({ ...setup, difficulty: d })}
+                    className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                      setup.difficulty === d
+                        ? "border-brand-600 bg-brand-50 text-brand-700"
+                        : "border-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Number of Questions
+              </label>
+              <div className="flex gap-2">
+                {COUNTS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setSetup({ ...setup, count: n })}
+                    className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                      setup.count === n
+                        ? "border-brand-600 bg-brand-50 text-brand-700"
+                        : "border-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={starting}
+              className="btn-primary w-full"
+            >
+              {starting ? "Generating Questions..." : "Generate Questions →"}
+            </button>
+          </form>
+
+          <div className="card bg-navy-900 text-white">
+            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-white/10">
+              <Sparkles size={18} className="text-brand-300" />
+            </div>
+            <p className="mb-4 text-sm text-slate-300">
+              AI will generate personalized questions based on your selection.
+            </p>
+            <ul className="space-y-2 text-sm">
+              {[
+                "Relevant to your target role",
+                "Real interview-style questions",
+                "Instant feedback & scoring",
+              ].map((t) => (
+                <li key={t} className="flex items-center gap-2 text-slate-200">
+                  <CheckCircle2 size={14} className="text-green-400" /> {t}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </Layout>
     );
   }
 
-  /* ---------- Interview screen ---------- */
+  /* ---------- Question screen ---------- */
   const total = session.questions.length;
   const progress = ((current + (feedback ? 1 : 0)) / total) * 100;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
-      <div>
-        <div className="mb-1 flex justify-between text-sm text-slate-500">
-          <span>Question {current + 1} of {total}</span>
-          <span>{setup.role}</span>
+    <Layout>
+      <div className="mx-auto max-w-2xl space-y-4">
+        <div className="flex items-center justify-between text-sm text-slate-500">
+          <span>
+            Question {current + 1} of {total}
+          </span>
+          <span className="flex items-center gap-1">
+            <Clock size={14} /> In progress
+          </span>
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-slate-200">
-          <div className="h-full bg-brand-600 transition-all" style={{ width: `${progress}%` }} />
+        <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+          <div
+            className="h-full rounded-full bg-brand-600 transition-all"
+            style={{ width: `${progress}%` }}
+          />
         </div>
-      </div>
 
-      <div className="card space-y-4">
-        <p className="text-lg font-medium">{session.questions[current].question_text}</p>
+        <div className="card space-y-4">
+          <div className="flex gap-2">
+            <span className="pill bg-brand-50 text-brand-700">
+              {setup.type}
+            </span>
+            {setup.topic && (
+              <span className="pill bg-slate-100 text-slate-600">
+                {setup.topic}
+              </span>
+            )}
+          </div>
+          <p className="text-lg font-medium">
+            {session.questions[current].question_text}
+          </p>
 
-        <textarea
-          rows={7} className="input" placeholder="Type your answer here..."
-          value={answer} disabled={!!feedback || submitting}
-          onChange={(e) => setAnswer(e.target.value)}
-        />
-
-        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-
-        {!feedback && (
-          submitting ? (
-            <Spinner label="AI is evaluating your answer..." />
-          ) : (
-            <button onClick={submitAnswer} disabled={!answer.trim()} className="btn-primary">
-              Submit answer
-            </button>
-          )
-        )}
-      </div>
-
-      {feedback && (
-        <div className="card space-y-4 border-brand-100 bg-brand-50/40">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Feedback</h3>
-            <ScoreBadge score={feedback.score} size="lg" />
-          </div>
-          <p className="text-slate-700">{feedback.feedback}</p>
+            <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setAnswerMode("text")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  answerMode === "text"
+                    ? "bg-white shadow-sm"
+                    : "text-slate-500"
+                }`}
+              >
+                <Type size={14} /> Text
+              </button>
+              <button
+                type="button"
+                onClick={() => setAnswerMode("code")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  answerMode === "code"
+                    ? "bg-white shadow-sm"
+                    : "text-slate-500"
+                }`}
+              >
+                <Code2 size={14} /> Code
+              </button>
+            </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <p className="mb-1 text-sm font-semibold text-green-700">Strengths</p>
-              <ul className="space-y-1 text-sm text-slate-700">
-                {feedback.strengths?.map((s, i) => <li key={i}>✓ {s}</li>)}
-              </ul>
-            </div>
-            <div>
-              <p className="mb-1 text-sm font-semibold text-amber-700">To improve</p>
-              <ul className="space-y-1 text-sm text-slate-700">
-                {feedback.improvements?.map((s, i) => <li key={i}>△ {s}</li>)}
-              </ul>
-            </div>
+            {answerMode === "text" && (
+              <MicButton
+                disabled={!!feedback || submitting}
+                onTranscript={(text) =>
+                  setAnswer((prev) => (prev ? `${prev} ${text}` : text))
+                }
+              />
+            )}
           </div>
 
-          {feedback.keywords_matched?.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {feedback.keywords_matched.map((k) => (
-                <span key={k} className="rounded-full bg-brand-100 px-2.5 py-0.5 text-xs text-brand-700">
-                  {k}
-                </span>
-              ))}
-            </div>
+          {answerMode === "text" ? (
+            <textarea
+              rows={7}
+              className="input"
+              placeholder="Type your answer here, or use the mic..."
+              value={answer}
+              disabled={!!feedback || submitting}
+              onChange={(e) => setAnswer(e.target.value)}
+            />
+          ) : (
+            <CodeEditorAnswer
+              value={answer}
+              onChange={setAnswer}
+              language={codeLanguage}
+              onLanguageChange={setCodeLanguage}
+              disabled={!!feedback || submitting}
+            />
           )}
 
-          <button onClick={nextQuestion} className="btn-primary">
-            {current === total - 1 ? "Finish & view results" : "Next question"}
-          </button>
+          {error && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          )}
+
+          {!feedback &&
+            (submitting ? (
+              <Spinner label="AI is evaluating your answer..." />
+            ) : (
+              <button
+                onClick={submitAnswer}
+                disabled={!answer.trim()}
+                className="btn-primary"
+              >
+                Next Question →
+              </button>
+            ))}
         </div>
-      )}
-    </div>
+
+        {feedback && (
+          <div className="card space-y-4 border-brand-100 bg-brand-50/30">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Feedback</h3>
+              <ScoreBadge score={feedback.score} size="lg" />
+            </div>
+            <p className="text-sm text-slate-700">{feedback.feedback}</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ul className="space-y-1 text-sm">
+                {feedback.strengths?.map((s, i) => (
+                  <li key={i} className="text-green-700">
+                    ✓ {s}
+                  </li>
+                ))}
+              </ul>
+              <ul className="space-y-1 text-sm">
+                {feedback.improvements?.map((s, i) => (
+                  <li key={i} className="text-amber-700">
+                    △ {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <button onClick={nextQuestion} className="btn-primary">
+              {current === total - 1
+                ? "Finish & View Results"
+                : "Next Question"}
+            </button>
+          </div>
+        )}
+      </div>
+    </Layout>
   );
 }
